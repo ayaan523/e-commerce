@@ -1,5 +1,4 @@
 // src/components/CartDrawer.jsx
-import React from 'react';
 
 const CartDrawer = ({ isOpen, onClose, cart, setCart, onCheckout }) => {
   if (!isOpen) return null;

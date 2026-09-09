@@ -1,16 +1,24 @@
 // src/components/CheckoutModal.jsx
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { apiUrl } from '../api';
 
-const CheckoutModal = ({ isOpen, onClose, cart, onOrderSuccess }) => {
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
+
+const CheckoutModal = ({ isOpen, onClose, cart, currentUser, onOrderSuccess }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
-    email: '',
-    address: '',
-    city: '',
-    country: '',
-    cardNumber: '',
-    expiry: '',
-    cvc: ''
+    email: currentUser?.email || '',
+    address: currentUser?.defaultAddress?.street || '',
+    city: currentUser?.defaultAddress?.city || '',
+    country: currentUser?.defaultAddress?.country || ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -24,43 +32,87 @@ const CheckoutModal = ({ isOpen, onClose, cart, onOrderSuccess }) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleNext = (e) => {
+  const handleProceedToReview = (e) => {
     e.preventDefault();
     setStep(2);
   };
 
-  const handleComplete = async (e) => {
+  const handleRazorpayPayment = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
 
+    const isLoaded = await loadRazorpayScript();
+    if (!isLoaded) {
+      alert('Razorpay SDK failed to load. Are you online?');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/orders', {
+      // 1. Initialize Order on Backend
+      const orderRes = await fetch(apiUrl('/api/razorpay/create-order'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          formData: formData,
-          cart: cart,
-          total: total
-        })
+        body: JSON.stringify({ cart })
       });
+      const orderData = await orderRes.json();
 
-      const data = await response.json();
+      if (!orderRes.ok) throw new Error(orderData.message);
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Order submission failed');
-      }
-      
-      setStep(3);
-      setTimeout(() => {
-        onOrderSuccess();
-        onClose();
-        setStep(1);
+      // 2. Configure Razorpay Pop-up
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID, 
+        amount: orderData.razorpayOrder.amount,
+        currency: orderData.razorpayOrder.currency,
+        name: 'AURA Atelier',
+        description: 'Luxury Acquisition Transaction',
+        order_id: orderData.razorpayOrder.id,
+        handler: async function (response) {
+          // 3. Complete and Verify Order
+          try {
+            const verifyRes = await fetch(apiUrl('/api/orders'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                formData,
+                cart,
+                razorpayResponse: response
+              })
+            });
+            const verifyData = await verifyRes.json();
+            
+            if (!verifyRes.ok) throw new Error(verifyData.message);
+            
+            setStep(3);
+            setTimeout(() => {
+              onOrderSuccess();
+              onClose();
+              setStep(1);
+              setIsSubmitting(false);
+            }, 3500);
+          } catch (err) {
+            alert(`Order confirmation failed: ${err.message}`);
+            setIsSubmitting(false);
+          }
+        },
+        prefill: {
+          name: formData.email.split('@')[0],
+          email: formData.email,
+        },
+        theme: {
+          color: '#d4af37' // Matches the AURA brand gold
+        }
+      };
+
+      const paymentObject = new window.Razorpay(options);
+      paymentObject.on('payment.failed', function (response) {
+        alert(`Payment failed: ${response.error.description}`);
         setIsSubmitting(false);
-      }, 3500);
-
+      });
+      
+      paymentObject.open();
     } catch (error) {
-      console.error("Checkout execution error:", error);
-      alert(`Checkout failed: ${error.message}`);
+      alert(`Checkout initialization failed: ${error.message}`);
       setIsSubmitting(false);
     }
   };
@@ -101,7 +153,7 @@ const CheckoutModal = ({ isOpen, onClose, cart, onOrderSuccess }) => {
         </button>
 
         {step === 1 && (
-          <form onSubmit={handleNext}>
+          <form onSubmit={handleProceedToReview}>
             <h2 style={{ fontSize: '13px', letterSpacing: '2.5px', fontWeight: '500', textTransform: 'uppercase', marginBottom: '24px', borderBottom: '1px solid #222', paddingBottom: '12px', marginTop: 0 }}>
               01 / Shipping Destination
             </h2>
@@ -126,36 +178,29 @@ const CheckoutModal = ({ isOpen, onClose, cart, onOrderSuccess }) => {
               </div>
             </div>
             <button type="submit" style={buttonStyle}>
-              Proceed to Payment — ${total.toFixed(2)}
+              Review & Pay — ₹{total.toFixed(2)}
             </button>
           </form>
         )}
 
         {step === 2 && (
-          <form onSubmit={handleComplete}>
+          <div>
             <h2 style={{ fontSize: '13px', letterSpacing: '2.5px', fontWeight: '500', textTransform: 'uppercase', marginBottom: '24px', borderBottom: '1px solid #222', paddingBottom: '12px', marginTop: 0 }}>
               02 / Secure Authentication
             </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
-              <input 
-                type="text" name="cardNumber" required placeholder="Card Number (XXXX XXXX XXXX XXXX)" value={formData.cardNumber} onChange={handleChange}
-                style={inputStyle}
-              />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                <input 
-                  type="text" name="expiry" required placeholder="MM / YY" value={formData.expiry} onChange={handleChange}
-                  style={inputStyle}
-                />
-                <input 
-                  type="password" name="cvc" required placeholder="CVC" value={formData.cvc} onChange={handleChange}
-                  style={inputStyle}
-                />
+            <div style={{ background: '#121212', border: '1px solid #222', padding: '20px', borderRadius: '6px', marginBottom: '24px' }}>
+              <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#888' }}>Destination: <span style={{ color: '#fff' }}>{formData.email}</span></p>
+              <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#888' }}>Total Items: <span style={{ color: '#fff' }}>{cart.length}</span></p>
+              <div style={{ height: '1px', background: '#222', margin: '15px 0' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: '#888' }}>Total Payable</span>
+                <span style={{ fontSize: '16px', color: '#d4af37', fontWeight: '600' }}>₹{total.toFixed(2)}</span>
               </div>
             </div>
-            <button type="submit" disabled={isSubmitting} style={buttonStyle}>
-              {isSubmitting ? 'Transmitting Secure Order...' : `Complete Acquisition — $${total.toFixed(2)}`}
+            <button onClick={handleRazorpayPayment} disabled={isSubmitting} style={buttonStyle}>
+              {isSubmitting ? 'Initializing Gateway...' : `Launch Secure Gateway`}
             </button>
-          </form>
+          </div>
         )}
 
         {step === 3 && (
@@ -167,7 +212,7 @@ const CheckoutModal = ({ isOpen, onClose, cart, onOrderSuccess }) => {
               Acquisition Confirmed
             </h2>
             <p style={{ color: '#777', fontSize: '12px', lineHeight: '1.6', margin: 0 }}>
-              Your order has been logged into the ledger.<br/>Receipt dispatched to <span style={{ color: '#fff' }}>{formData.email}</span>.
+              Your transaction has been securely processed via Razorpay.<br/>Ledger dispatched to <span style={{ color: '#fff' }}>{formData.email}</span>.
             </p>
           </div>
         )}

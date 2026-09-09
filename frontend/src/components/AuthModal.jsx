@@ -1,6 +1,7 @@
 // src/components/AuthModal.jsx
-import React, { useState } from 'react';
+import { useState } from 'react';
 import GoogleLoginButton from './GoogleLoginButton';
+import { apiUrl } from '../api';
 
 const AuthModal = ({ isOpen, onClose, onLoginSuccess }) => {
   const [isRegistering, setIsRegistering] = useState(false);
@@ -15,10 +16,10 @@ const AuthModal = ({ isOpen, onClose, onLoginSuccess }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const endpoint = isRegistering ? '/api/auth/register' : '/api/auth/login';
-    const payload = isRegistering ? { email, password, address, city, country } : { email, password };
+    const payload = isRegistering ? { email, password, street: address, city, country } : { email, password };
 
     try {
-      const res = await fetch(`http://127.0.0.1:5000${endpoint}`, {
+      const res = await fetch(apiUrl(endpoint), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

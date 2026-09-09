@@ -1,3 +1,4 @@
+// seed.js
 const mongoose = require('mongoose');
 require('dotenv').config();
 
@@ -26,7 +27,7 @@ const initialProducts = [
     description: "Ultra-soft grade-A Mongolian cashmere tailored with an asymmetric silhouette.",
     category: "Knitwear",
     images: ["https://images.unsplash.com/photo-1624378439575-d8705ad7ae80"],
-    status: "COMING_SOON"
+    status: "UPCOMING" // Corrected from COMING_SOON
   }
 ];
 

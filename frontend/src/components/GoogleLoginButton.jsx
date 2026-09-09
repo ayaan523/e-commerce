@@ -1,11 +1,11 @@
 // src/components/GoogleLoginButton.jsx
-import React from 'react';
 import { GoogleLogin } from '@react-oauth/google';
+import { apiUrl } from '../api';
 
 const GoogleLoginButton = ({ onLoginSuccess }) => {
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/auth/google', {
+      const res = await fetch(apiUrl('/api/auth/google'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: credentialResponse.credential })

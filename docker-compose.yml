@@ -1,0 +1,48 @@
+services:
+  # 1. The Database
+  database:
+    image: mongo:4.4
+    container_name: aura-database
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - aura-network
+
+  # 2. The Backend API
+  backend:
+    build: ./backend
+    container_name: aura-backend
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./backend/.env
+    environment:
+      # This overrides your .env file inside the container network!
+      - MONGO_URI=mongodb://database:27017/luxury_ecommerce
+    depends_on:
+      - database
+    networks:
+      - aura-network
+
+  # 3. The Frontend Storefront
+  frontend:
+    build: ./frontend
+    container_name: aura-frontend
+    # Maps Nginx's internal port 80 to your familiar localhost:5173
+    ports:
+      - "5173:80" 
+    depends_on:
+      - backend
+    networks:
+      - aura-network
+
+# Define persistent storage so you don't lose orders if the database restarts
+volumes:
+  mongo-data:
+
+# Define a secure internal network for the containers to communicate
+networks:
+  aura-network:
+    driver: bridge

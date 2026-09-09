@@ -1,7 +1,7 @@
-// src/components/AdminDashboard.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { apiUrl, authHeaders } from '../api';
 
-const AdminDashboard = ({ isOpen, onClose, products = [], onProductDeleted }) => {
+const AdminDashboard = ({ isOpen, onClose, products = [], onProductDeleted, adminToken }) => {
   const [activeTab, setActiveTab] = useState('inventory');
   
   const [data, setData] = useState(null);
@@ -19,10 +19,10 @@ const AdminDashboard = ({ isOpen, onClose, products = [], onProductDeleted }) =>
   const fetchData = useCallback(async () => {
     try {
       const [analyticsRes, productsRes, categoriesRes, ordersRes] = await Promise.all([
-        fetch('http://localhost:5000/api/admin/analytics'),
-        fetch('http://localhost:5000/api/products'),
-        fetch('http://localhost:5000/api/categories'),
-        fetch('http://localhost:5000/api/orders')
+        fetch(apiUrl('/api/admin/analytics'), { headers: authHeaders(adminToken) }),
+        fetch(apiUrl('/api/products')),
+        fetch(apiUrl('/api/categories')),
+        fetch(apiUrl('/api/admin/orders'), { headers: authHeaders(adminToken) }) // <-- Fixed API path
       ]);
       
       if (analyticsRes.ok) setData(await analyticsRes.json());
@@ -38,25 +38,26 @@ const AdminDashboard = ({ isOpen, onClose, products = [], onProductDeleted }) =>
     } catch (err) {
       console.warn("Backend offline state fallback:", err);
     }
-  }, [newProduct.category]);
+  }, [newProduct.category, adminToken]);
 
   useEffect(() => {
-    if (isOpen) fetchData();
+    if (!isOpen) return undefined;
+    const timer = setTimeout(fetchData, 0);
+    return () => clearTimeout(timer);
   }, [isOpen, fetchData]);
 
+  // ... (Keep category and order handlers exactly the same) ...
   const handleCreateCategory = async (e) => {
     e.preventDefault();
     if (!newCatName.trim()) return;
-
     try {
-      const res = await fetch('http://localhost:5000/api/admin/categories', {
+      const res = await fetch(apiUrl('/api/admin/categories'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders(adminToken) },
         body: JSON.stringify({ name: newCatName })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
-
       setCategories(prev => [...prev, data.category].sort((a,b) => a.name.localeCompare(b.name)));
       setNewCatName('');
       alert("Category created successfully!");
@@ -68,12 +69,28 @@ const AdminDashboard = ({ isOpen, onClose, products = [], onProductDeleted }) =>
   const handleDeleteCategory = async (catId) => {
     if (!window.confirm("Delete this category?")) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/categories/${catId}`, { method: 'DELETE' });
+      const res = await fetch(apiUrl(`/api/admin/categories/${catId}`), { method: 'DELETE', headers: authHeaders(adminToken) });
       if (res.ok) {
         setCategories(prev => prev.filter(c => c._id !== catId));
       }
-    } catch (err) {
+    } catch {
       alert("Failed to delete category.");
+    }
+  };
+
+  const handleUpdateOrderStatus = async (orderId, currentStatus) => {
+    const newStatus = currentStatus === 'PENDING' ? 'DISPATCHED' : 'DELIVERED';
+    try {
+      const res = await fetch(apiUrl(`/api/admin/orders/${orderId}/status`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(adminToken) },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res.ok) {
+        setOrders(orders.map(o => o._id === orderId ? { ...o, status: newStatus } : o));
+      }
+    } catch {
+      alert("Failed to update status.");
     }
   };
 
@@ -85,12 +102,17 @@ const AdminDashboard = ({ isOpen, onClose, products = [], onProductDeleted }) =>
     reader.readAsDataURL(file);
   };
 
+  // 1. FIX: Safely fallback status to IN_STOCK when editing older products
   const handleEditClick = (product) => {
     setEditingId(product._id);
     setNewProduct({
-      name: product.name, price: product.price, originalPrice: product.originalPrice || '',
-      description: product.description || '', category: product.category || (categories[0]?.name || ''), 
-      images: '', status: product.status
+      name: product.name, 
+      price: product.price, 
+      originalPrice: product.originalPrice || '',
+      description: product.description || '', 
+      category: product.category || (categories[0]?.name || ''), 
+      images: '', 
+      status: product.status || 'IN_STOCK' // <-- Added fallback here
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -109,43 +131,31 @@ const AdminDashboard = ({ isOpen, onClose, products = [], onProductDeleted }) =>
       images: newProduct.images ? [newProduct.images] : [], status: newProduct.status || "IN_STOCK"
     };
 
-    const url = editingId ? `http://localhost:5000/api/admin/products/${editingId}` : 'http://localhost:5000/api/admin/products';
+    const url = editingId ? apiUrl(`/api/admin/products/${editingId}`) : apiUrl('/api/admin/products');
     const method = editingId ? 'PUT' : 'POST';
 
     try {
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(productPayload) });
-      if (!res.ok) throw new Error('Failed to save product');
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json', ...authHeaders(adminToken) }, body: JSON.stringify(productPayload) });
+      const responseData = await res.json();
+      if (!res.ok) throw new Error(responseData.message || 'Failed to save product');
+      
       alert(`Artifact ${editingId ? 'updated' : 'added'} successfully.`);
-      window.location.href = 'http://localhost:5173/?admin=true';
+      
+      handleCancelEdit();
+      fetchData(); 
     } catch (err) {
-      alert('Operation failed. Check backend connection.');
+      alert(`Operation failed: ${err.message}`);
     }
   };
 
   const handleDeleteProduct = async (id) => {
     if (!window.confirm("Remove this artifact?")) return;
     try {
-      await fetch(`http://localhost:5000/api/admin/products/${id}`, { method: 'DELETE' });
+      await fetch(apiUrl(`/api/admin/products/${id}`), { method: 'DELETE', headers: authHeaders(adminToken) });
       if (onProductDeleted) onProductDeleted(id);
       setLocalProducts(prev => prev.filter(p => p._id !== id));
-    } catch (err) {
+    } catch {
       console.warn("Backend offline.");
-    }
-  };
-
-  const handleUpdateOrderStatus = async (orderId, currentStatus) => {
-    const newStatus = currentStatus === 'PENDING' ? 'DISPATCHED' : 'DELIVERED';
-    try {
-      const res = await fetch(`http://localhost:5000/api/admin/orders/${orderId}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
-      });
-      if (res.ok) {
-        setOrders(orders.map(o => o._id === orderId ? { ...o, status: newStatus } : o));
-      }
-    } catch (err) {
-      alert("Failed to update status.");
     }
   };
 
@@ -186,19 +196,9 @@ const AdminDashboard = ({ isOpen, onClose, products = [], onProductDeleted }) =>
           {activeTab === 'categories' && (
             <div>
               <form onSubmit={handleCreateCategory} style={{ background: '#111', border: '1px solid #222', padding: '20px', marginBottom: '30px', display: 'flex', gap: '15px' }}>
-                <input 
-                  type="text" 
-                  placeholder="New Category Name (e.g. Timepieces)" 
-                  value={newCatName} 
-                  onChange={e => setNewCatName(e.target.value)} 
-                  style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', color: '#fff', padding: '10px', fontSize: '13px', outline: 'none' }} 
-                  required 
-                />
-                <button type="submit" style={{ background: '#fff', color: '#000', border: 'none', padding: '10px 20px', fontSize: '11px', letterSpacing: '1px', fontWeight: '600', cursor: 'pointer' }}>
-                  ADD CATEGORY
-                </button>
+                <input type="text" placeholder="New Category Name (e.g. Timepieces)" value={newCatName} onChange={e => setNewCatName(e.target.value)} style={{ flex: 1, background: '#1a1a1a', border: '1px solid #333', color: '#fff', padding: '10px', fontSize: '13px', outline: 'none' }} required />
+                <button type="submit" style={{ background: '#fff', color: '#000', border: 'none', padding: '10px 20px', fontSize: '11px', letterSpacing: '1px', fontWeight: '600', cursor: 'pointer' }}>ADD CATEGORY</button>
               </form>
-
               <h3 style={{ fontSize: '12px', letterSpacing: '1.5px', textTransform: 'uppercase', color: '#888', marginBottom: '15px' }}>Allowed Store Categories</h3>
               <div style={{ border: '1px solid #222' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
@@ -241,9 +241,7 @@ const AdminDashboard = ({ isOpen, onClose, products = [], onProductDeleted }) =>
                         {order.customer?.address}, {order.customer?.city}, {order.customer?.country}
                       </td>
                       <td style={{ padding: '14px', color: '#d4af37' }}>${order.totalAmount?.toFixed(2)}</td>
-                      <td style={{ padding: '14px', color: (order.status || 'PENDING') === 'PENDING' ? '#ff9800' : '#4caf50' }}>
-                        {order.status || 'PENDING'}
-                      </td>
+                      <td style={{ padding: '14px', color: (order.status || 'PENDING') === 'PENDING' ? '#ff9800' : '#4caf50' }}>{order.status || 'PENDING'}</td>
                       <td style={{ padding: '14px', textAlign: 'right' }}>
                         {(order.status || 'PENDING') === 'PENDING' ? (
                           <button onClick={() => handleUpdateOrderStatus(order._id, 'PENDING')} style={{ background: '#fff', color: '#000', border: 'none', padding: '6px 12px', cursor: 'pointer', fontSize: '10px', fontWeight: '600' }}>DISPATCH</button>
@@ -301,8 +299,8 @@ const AdminDashboard = ({ isOpen, onClose, products = [], onProductDeleted }) =>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
                   <select value={newProduct.status} onChange={e => setNewProduct({...newProduct, status: e.target.value})} style={{ background: '#1a1a1a', border: '1px solid #333', color: '#fff', padding: '10px', fontSize: '13px', outline: 'none' }}>
                     <option value="IN_STOCK">In Stock</option>
-                    <option value="OUT_OF_STOCK">Out of Stock (Blurred)</option>
-                    <option value="UPCOMING">Upcoming (Blurred + ⏳)</option>
+                    <option value="OUT_OF_STOCK">Out of Stock</option>
+                    <option value="UPCOMING">Upcoming</option>
                   </select>
                   <input type="text" placeholder="Description" value={newProduct.description} onChange={e => setNewProduct({...newProduct, description: e.target.value})} style={{ background: '#1a1a1a', border: '1px solid #333', color: '#fff', padding: '10px', fontSize: '13px', outline: 'none' }} />
                 </div>
@@ -320,6 +318,8 @@ const AdminDashboard = ({ isOpen, onClose, products = [], onProductDeleted }) =>
                       <th style={{ padding: '14px', fontWeight: '400' }}>Name</th>
                       <th style={{ padding: '14px', fontWeight: '400' }}>Category</th>
                       <th style={{ padding: '14px', fontWeight: '400' }}>Price</th>
+                      {/* 2. FIX: Added visual Status column to table header */}
+                      <th style={{ padding: '14px', fontWeight: '400' }}>Status</th>
                       <th style={{ padding: '14px', fontWeight: '400', textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
@@ -336,6 +336,19 @@ const AdminDashboard = ({ isOpen, onClose, products = [], onProductDeleted }) =>
                         <td style={{ padding: '14px', color: prod.originalPrice ? '#d4af37' : '#fff' }}>
                           ${prod.price?.toFixed(2)}
                           {prod.originalPrice && <span style={{ textDecoration: 'line-through', color: '#666', fontSize: '10px', marginLeft: '5px' }}>${prod.originalPrice}</span>}
+                        </td>
+                        {/* 3. FIX: Display the actual stock status with color coding */}
+                        <td style={{ padding: '14px' }}>
+                           <span style={{
+                             color: (prod.status || 'IN_STOCK') === 'IN_STOCK' ? '#4caf50' : (prod.status === 'UPCOMING' ? '#2196f3' : '#ff9800'),
+                             fontSize: '10px', 
+                             letterSpacing: '0.5px',
+                             padding: '4px 8px', 
+                             border: '1px solid #333', 
+                             borderRadius: '4px'
+                           }}>
+                             {(prod.status || 'IN_STOCK').replace(/_/g, ' ')}
+                           </span>
                         </td>
                         <td style={{ padding: '14px', textAlign: 'right' }}>
                           <button onClick={() => handleEditClick(prod)} style={{ background: 'transparent', border: '1px solid #888', color: '#aaa', padding: '4px 10px', cursor: 'pointer', fontSize: '11px', marginRight: '10px' }}>EDIT</button>

@@ -1,5 +1,6 @@
 // src/components/ClientProfile.jsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { apiUrl, authHeaders } from '../api';
 
 const ClientProfile = ({ isOpen, onClose, currentUser, setCurrentUser }) => {
   const [activeTab, setActiveTab] = useState('history'); // 'history' or 'settings'
@@ -7,17 +8,10 @@ const ClientProfile = ({ isOpen, onClose, currentUser, setCurrentUser }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [addressForm, setAddressForm] = useState({ street: '', city: '', state: '', country: '' });
 
-  useEffect(() => {
-    if (isOpen && currentUser) {
-      setAddressForm(currentUser.defaultAddress || { street: '', city: '', state: '', country: '' });
-      fetchOrderHistory();
-    }
-  }, [isOpen, currentUser]);
-
-  const fetchOrderHistory = async () => {
+  const fetchOrderHistory = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`http://127.0.0.1:5000/api/orders/client/${currentUser.email}`);
+      const res = await fetch(apiUrl(`/api/orders/client/${encodeURIComponent(currentUser.email)}`), { headers: authHeaders(currentUser.token) });
       if (res.ok) {
         const data = await res.json();
         setOrders(data);
@@ -27,15 +21,24 @@ const ClientProfile = ({ isOpen, onClose, currentUser, setCurrentUser }) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!isOpen || !currentUser) return undefined;
+    const timer = setTimeout(() => {
+      setAddressForm(currentUser.defaultAddress || { street: '', city: '', state: '', country: '' });
+      fetchOrderHistory();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [isOpen, currentUser, fetchOrderHistory]);
 
   const handleUpdateAddress = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/auth/profile', {
+      const res = await fetch(apiUrl('/api/auth/profile'), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: currentUser.email, defaultAddress: addressForm })
+        headers: { 'Content-Type': 'application/json', ...authHeaders(currentUser.token) },
+        body: JSON.stringify({ defaultAddress: addressForm })
       });
       
       const data = await res.json();

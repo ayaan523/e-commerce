@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Environment, OrbitControls, Sparkles, useGLTF, Float, Center } from '@react-three/drei';
 import '../App.css'; // Ensure it can access the CSS
