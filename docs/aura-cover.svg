@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">AURA luxury 3D e-commerce platform</title>
+  <desc id="desc">A dark editorial cover for the AURA fashion storefront.</desc>
+  <defs>
+    <radialGradient id="glow" cx="70%" cy="40%" r="55%"><stop offset="0" stop-color="#373737"/><stop offset="1" stop-color="#101010"/></radialGradient>
+    <linearGradient id="line" x1="0" x2="1"><stop stop-color="#d7b98a" stop-opacity="0"/><stop offset=".5" stop-color="#d7b98a"/><stop offset="1" stop-color="#d7b98a" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="#0b0b0b"/>
+  <rect width="1920" height="1080" fill="url(#glow)" opacity=".75"/>
+  <circle cx="1450" cy="480" r="315" fill="none" stroke="#d7b98a" stroke-opacity=".18" stroke-width="2"/>
+  <circle cx="1450" cy="480" r="240" fill="none" stroke="#d7b98a" stroke-opacity=".12" stroke-width="1"/>
+  <path d="M1120 860c140-360 250-580 330-660 100 170 215 390 340 660" fill="none" stroke="#d7b98a" stroke-opacity=".28" stroke-width="2"/>
+  <path d="M100 860h1720" stroke="url(#line)" stroke-width="2"/>
+  <text x="120" y="170" fill="#d7b98a" font-family="Arial, Helvetica, sans-serif" font-size="28" letter-spacing="12">THE NEW STANDARD</text>
+  <text x="112" y="510" fill="#f1eee7" font-family="Arial, Helvetica, sans-serif" font-size="170" font-weight="700" letter-spacing="20">AURA</text>
+  <text x="120" y="590" fill="#d7b98a" font-family="Arial, Helvetica, sans-serif" font-size="30" letter-spacing="8">LUXURY 3D E-COMMERCE</text>
+  <text x="120" y="940" fill="#8c8c8c" font-family="Arial, Helvetica, sans-serif" font-size="22" letter-spacing="3">REACT  ·  THREE.JS  ·  EXPRESS  ·  MONGODB</text>
+</svg>
